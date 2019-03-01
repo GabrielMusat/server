@@ -1,6 +1,7 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, make_response
 from flask_httpauth import HTTPBasicAuth
 from flask_cors import CORS, cross_origin
+from sanity_checker import check_add
 
 import json
 import os
@@ -167,18 +168,14 @@ def add_to_buffer():
         json_instruction = request.data
         user = auth_user.username()
         json_decoded = json.loads(json_instruction)
-        if 'instruction' not in json_decoded:
-            return json.dumps({'status': 'not ok', 'message': '"instruction" parameter must be sent'})
-        if json_decoded['instruction'] == 'download' and not os.path.isfile(os.path.join('gcodes', json_decoded['filename'])):
-            return json.dumps({'status': 'not ok', 'message': f'file {json_decoded["filename"]} not in server, avaible gcodes are: {os.listdir("gcodes")}'})
+        check_add(json_decoded)
         buffer_out[user].append(json_instruction)
         print('json added to buffer')
-        return json.dumps({'status': 'ok'})
+        return make_response(200, json.dumps({'status': 'ok'}))
 
     except Exception as e:
-        print('error adding instruction to buffer:')
-        print(e)
-        return json.dumps({'status': 'could not add instruction to buffer', 'error': str(e)})
+        print(f'error adding instruction to buffer: {e}')
+        return make_response(400, json.dumps({'status': 'not ok', 'error': str(e)}))
 
 
 @app.route('/upload', methods=['POST'])
@@ -191,14 +188,14 @@ def upload_file():
         if '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() == 'gcode':
             if not os.path.exists(folder): os.makedirs(folder)
             file.save(os.path.join(folder, file.filename))
-            return f'g-code {file.filename} uploaded correctly'
+            return make_response(200, f'g-code {file.filename} uploaded correctly')
 
         else:
-            return 'only .gcode files are allowed'
+            return make_response(400, 'only .gcode files are allowed')
 
     except Exception as e:
         print('error al subir gcode: ' + str(e))
-        return 'error uploading g-code: ' + str(e)
+        return make_response(400, 'error uploading g-code: ' + str(e))
 
 
 @app.route('/download', methods=['GET'])
@@ -209,12 +206,9 @@ def download_file():
         user = auth_user.username()
         filename = request.args.get('filename')
         folder = 'gcodes'
-        if not os.path.exists(folder):
-            return f'there are no g-codes in the server'
-
+        assert os.path.exists(folder), Exception('there are no g-codes in the server')
         file_path = os.path.join(folder, filename)
-        if not os.path.isfile(file_path):
-            return f'g-code {filename} is not in the server'
+        assert os.path.isfile(file_path), Exception(f'g-code {filename} is not in the server')
         # TODO ojo cuidado con el and false
         # user_json_path = os.path.join('users', user + '.json')
         # if not os.path.isfile(user_json_path):
@@ -228,8 +222,8 @@ def download_file():
         return send_file(file_path)
 
     except Exception as e:
-        print('error al mandar gcode a impresora: ' + str(e))
-        return 'error al mandar gcode a impresora: ' + str(e)
+        print('error al mandar archivo gcode a impresora: ' + str(e))
+        return make_response(400, 'error al mandar archivo gcode a impresora: ' + str(e))
 
 
 if __name__ == '__main__':
