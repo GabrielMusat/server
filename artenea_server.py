@@ -1,7 +1,7 @@
 from flask import Flask, request, send_file
 from flask_httpauth import HTTPBasicAuth
 from flask_cors import CORS, cross_origin
-from OpenSSL import SSL
+
 import json
 import os
 
@@ -9,9 +9,6 @@ config = json.loads(open('artenea_server.conf').read())
 users = json.loads(open('UsersDDBB.conf').read())
 admins = json.loads(open('AdminsDDBB.conf').read())
 
-# context = SSL.Context(SSL.SSLv23_METHOD)
-# context.use_privatekey_file('yourserver.key')
-# context.use_certificate_file('yourserver.crt')
 
 app = Flask(__name__)
 cors = CORS(app)
@@ -169,6 +166,11 @@ def add_to_buffer():
     try:
         json_instruction = request.data
         user = auth_user.username()
+        json_decoded = json.loads(json_instruction)
+        if 'instruction' not in json_decoded:
+            return json.dumps({'status': 'not ok', 'message': '"instruction" parameter must be sent'})
+        if json_decoded['instruction'] == 'download' and not os.path.isfile(os.path.join('gcodes', json_decoded['filename'])):
+            return json.dumps({'status': 'not ok', 'message': f'file {json_decoded["filename"]} not in server, avaible gcodes are: {os.listdir("gcodes")}'})
         buffer_out[user].append(json_instruction)
         print('json added to buffer')
         return json.dumps({'status': 'ok'})
@@ -213,16 +215,17 @@ def download_file():
         file_path = os.path.join(folder, filename)
         if not os.path.isfile(file_path):
             return f'g-code {filename} is not in the server'
-
-        user_json_path = os.path.join('users', user + '.json')
-        if not os.path.isfile(user_json_path):
-            return f'user {user} has no right to print this g-code'
-        else:
-            user_json = json.loads(open(user_json_path, 'r').read())
-            if filename in user_json['rights']:
-                return send_file(file_path)
-            else:
-                return f'user {user} has no right to print this g-code'
+        # TODO ojo cuidado con el and false
+        # user_json_path = os.path.join('users', user + '.json')
+        # if not os.path.isfile(user_json_path):
+        #     return f'user {user} has no right to print this g-code'
+        # else:
+        #     user_json = json.loads(open(user_json_path, 'r').read())
+        #     if filename in user_json['rights']:
+        #         return send_file(file_path)
+        #     else:
+        #         return f'user {user} has no right to print this g-code'
+        return send_file(file_path)
 
     except Exception as e:
         print('error al mandar gcode a impresora: ' + str(e))
