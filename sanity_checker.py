@@ -10,7 +10,7 @@ def check_add(json_decoded):
     if json_decoded['instruction'] == 'download':
         assert os.path.isfile(os.path.join('gcodes', json_decoded['filename'])), Exception(f'file {json_decoded["filename"]} not in server, avaible gcodes are: {os.listdir("gcodes")}')
     if json_decoded['instruction'] == 'print':
-        assert 'filename' in json_decoded, Exception('filename parameter not found, filename parameter must be set with one of the avaiable gcodes in server')
+        assert 'file' in json_decoded, Exception('file parameter not found, file parameter must be set with one of the avaiable gcodes in server')
         assert os.path.isfile(os.path.join('gcodes', json_decoded['filename'])), Exception(f'file {json_decoded["filename"]} not in server, avaiable gcodes are {os.listdir("gcodes")}')
     if json_decoded['instruction'] == 'command':
         assert 'command' in json_decoded, Exception('command parameter not found, command parameter must be set in json with a valid Marlin firmware gcode')
