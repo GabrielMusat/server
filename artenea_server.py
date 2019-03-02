@@ -171,11 +171,11 @@ def add_to_buffer():
         check_add(json_decoded)
         buffer_out[user].append(json_instruction)
         print('json added to buffer')
-        return make_response(200, json.dumps({'status': 'ok'}))
+        return make_response(json.dumps({'status': 'ok'}), 200)
 
     except Exception as e:
         print(f'error adding instruction to buffer: {e}')
-        return make_response(400, json.dumps({'status': 'not ok', 'error': str(e)}))
+        return make_response(json.dumps({'status': 'not ok', 'error': str(e)}), 400)
 
 
 @app.route('/upload', methods=['POST'])
@@ -188,14 +188,14 @@ def upload_file():
         if '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() == 'gcode':
             if not os.path.exists(folder): os.makedirs(folder)
             file.save(os.path.join(folder, file.filename))
-            return make_response(200, f'g-code {file.filename} uploaded correctly')
+            return make_response(f'g-code {file.filename} uploaded correctly', 200)
 
         else:
-            return make_response(400, 'only .gcode files are allowed')
+            return make_response('only .gcode files are allowed', 400)
 
     except Exception as e:
         print('error al subir gcode: ' + str(e))
-        return make_response(400, 'error uploading g-code: ' + str(e))
+        return make_response('error uploading g-code: ' + str(e), 400)
 
 
 @app.route('/download', methods=['GET'])
@@ -223,7 +223,7 @@ def download_file():
 
     except Exception as e:
         print('error al mandar archivo gcode a impresora: ' + str(e))
-        return make_response(400, 'error al mandar archivo gcode a impresora: ' + str(e))
+        return make_response('error al mandar archivo gcode a impresora: ' + str(e), 400)
 
 
 if __name__ == '__main__':
