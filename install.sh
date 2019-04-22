@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cd ~/artenea_server
+cd ~/server
 
 sudo apt install python3-pip -y
 
@@ -18,31 +18,31 @@ pip3 install -r requirements.txt
 
 echo "
 #!/usr/bin/env bash
-source ~/artenea_server/venv/bin/activate
-cd ~/artenea_server
-python3 artenea_server.py
-" > artenea_server.sh
+source ~/server/venv/bin/activate
+cd ~/server
+python3 server.py
+" > server.sh
 
-sudo chmod +x artenea_server.sh
-sudo mv artenea_server.sh /bin/artenea_server
+sudo chmod +x server.sh
+sudo mv server.sh /bin/server
 
-sudo touch /etc/systemd/system/artenea_server.service
-sudo chmod 775 /etc/systemd/system/artenea_server.service
-sudo chmod a+w /etc/systemd/system/artenea_server.service
+sudo touch /etc/systemd/system/server.service
+sudo chmod 775 /etc/systemd/system/server.service
+sudo chmod a+w /etc/systemd/system/server.service
 
 sudo echo "
 [Unit]
 Description=zi
 [Service]
 User=pablo_3pol
-ExecStart=/bin/bash /bin/artenea_server
+ExecStart=/bin/bash /bin/server
 Restart=on-failure
-WorkingDirectory=~/artenea_server
+WorkingDirectory=~/server
 StandardOutput=syslog
 StandardError=syslog
 [Install]
 WantedBy=multi-user.target
-" > /etc/systemd/system/artenea_server.service
+" > /etc/systemd/system/server.service
 
-sudo systemctl enable artenea_server.service
+sudo systemctl enable server.service
 sudo systemctl daemon-reload
