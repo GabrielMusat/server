@@ -37,7 +37,7 @@ Description=zi
 User=pablo_3pol
 ExecStart=/bin/bash /bin/server
 Restart=on-failure
-WorkingDirectory=~/server
+WorkingDirectory=/
 StandardOutput=syslog
 StandardError=syslog
 [Install]
