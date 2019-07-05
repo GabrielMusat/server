@@ -227,4 +227,8 @@ def download_file():
 
 
 if __name__ == '__main__':
-    app.run(host=config['Artenea_host'], port=config['Artenea_port'])
+    import socket
+    if socket.gethostname() == 'artenea':
+        app.run(host=config['Artenea_host'], port=config['Artenea_port'], ssl_context=('fullchain.pem', 'privkey.pem'))
+    else:
+        app.run(host=config['Artenea_host'], port=config['Artenea_port'])
