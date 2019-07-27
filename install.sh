@@ -10,7 +10,7 @@ sudo apt-get install python3-dev -y
 
 python3 -m venv venv
 
-source ~/server/venv/bin/activate
+source venv/bin/activate
 
 pip3 install wheel
 
@@ -18,8 +18,8 @@ pip3 install -r requirements.txt
 
 echo "
 #!/usr/bin/env bash
-source ~/server/venv/bin/activate
 cd ~/server
+source venv/bin/activate
 python3 server.py
 " > server.sh
 
@@ -34,7 +34,7 @@ sudo echo "
 [Unit]
 Description=zi
 [Service]
-User=pablo_3pol
+User=root
 ExecStart=/bin/bash /bin/server
 Restart=on-failure
 WorkingDirectory=/

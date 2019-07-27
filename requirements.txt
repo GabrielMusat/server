@@ -1,4 +1,4 @@
 requests
-flask
-flask-httpauth
-flask-cors
+aiohttp
+aiohttp-cors
+python-socketio

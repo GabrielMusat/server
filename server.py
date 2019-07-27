@@ -1,234 +1,250 @@
-from flask import Flask, request, send_file, make_response
-from flask_httpauth import HTTPBasicAuth
-from flask_cors import CORS, cross_origin
-from sanity_checker import check_add
-
+from aiohttp import web
+import aiohttp_cors
+from logger import Logger
+import base64
 import json
+import time
+import socketio
+import asyncio
 import os
+import sanity_checker
 
-config = json.loads(open('artenea_server.conf').read())
-users = json.loads(open('UsersDDBB.conf').read())
-admins = json.loads(open('AdminsDDBB.conf').read())
+logger = Logger('server')
 
+sio = socketio.AsyncServer(async_mode='aiohttp')
+app = web.Application()
 
-app = Flask(__name__)
-cors = CORS(app)
-app.config['CORS_HEADERS'] = 'Content-Type'
-auth_user = HTTPBasicAuth()
-auth_admin = HTTPBasicAuth()
+if not os.path.isdir('data'): os.mkdir('data')
+if not os.path.isdir('data/gcodes'): os.mkdir('data/gcodes')
+if not os.path.isdir('data/users'): os.mkdir('data/users')
 
-buffer_out = {}
-buffer_in = {}
-for user_name in users:
-    buffer_out[user_name] = []
-    buffer_in[user_name] = {'temp': -1, 'job': -1}
+config = json.load(open('artenea_server.json'))
+
+printers = {}
 
 
-@auth_user.get_password
-def get_pw(username):
-    if username in users:
-        return users[username]
-    return None
+@sio.event
+async def connect(sid, env):
+    printers[env['name']] = {'sid': sid, 'response': None, 'status': None}
+    logger.info(f'{env["name"]}\'s pandora is connected :)')
 
 
-@auth_admin.get_password
-def get_pw(username):
-    if username in admins:
-        return admins[username]
-    return None
+@sio.event
+async def response(sid, data):
+    printers[data['user']]['response'] = data['response']
+    logger.info(f'{data["user"]}\'s pandora has returned a response: {data["response"]}')
 
 
-@app.route('/')
-@auth_admin.login_required
-def test():
-    return 'ok'
+@sio.event
+async def status(sid, data):
+    printers[data['user']]['status'] = data['status']
 
 
-@app.route('/register', methods=['POST'])
-@auth_admin.login_required
-@cross_origin()
-def register():
-    try:
-        new_users = json.loads(request.data)
-        for new_user in new_users:
-            if new_user in users:
-                print('user already registered')
-            else:
-                users[new_user] = new_users[new_user]
-                buffer_out[new_user] = []
-                with open('UsersDDBB.conf', 'w') as UsersDDBB:
-                    UsersDDBB.write(json.dumps(users, indent=4))
-
-                print(f'new user {new_user} registered correctly')
-
-        return 'ok'
-
-    except Exception as e:
-        print('new user registration failed')
-        print(e)
-
-        return 'failed'
-
-
-@app.route('/users', methods=['GET'])
-@cross_origin()
-def get_users():
-    return json.dumps(users, indent=4)
-
-
-@app.route('/gcodes', methods=['GET'])
-@auth_user.login_required
-@cross_origin()
-def get_files():
-    user = auth_user.username()
-    return json.dumps(os.listdir('gcodes'))
-
-
-@app.route('/rights', methods=['POST'])
-@auth_admin.login_required
-@cross_origin()
-def give_rigths():
-    right = json.loads(request.data)
-    user = [k for k in right][0]
-    gcode = right[user]
-    if gcode not in os.listdir('gcodes'):
-        return f'gcode {gcode} not uploaded to server'
-    folder = 'users'
-    if not os.path.exists(folder): os.makedirs(folder)
-    user_json_path = os.path.join(folder, user + '.json')
-    if not os.path.isfile(user_json_path):
-        user_json = {'rights': [gcode]}
-        with open(user_json_path, 'w') as f:
-            f.write(json.dumps(user_json, indent=4))
+@sio.event
+async def disconnect(sid):
+    for user in printers:
+        if printers[user]['sid'] == sid:
+            logger.info(f'{user}\'s printer disconnected :(')
+            del printers[user]
+            return
     else:
-        user_json = json.loads(open(user_json_path, 'r').read())
-        if gcode in user_json['rights']:
-            return f'user {user} already have gcode rights to {gcode}'
-        user_json['rights'].append(gcode)
-        with open(user_json_path, 'w') as f:
-            f.write(json.dumps(user_json, indent=4))
-
-    return f'user {user} gcode rights: {json.dumps(user_json["rights"])}'
+        logger.error(f'{sid} not found in printers, could not disconnect')
 
 
-@app.route('/checkrights', methods=['GET'])
-@auth_user.login_required
-@cross_origin()
-def check_rights():
-    user = auth_user.username()
-    user_json_path = os.path.join('users', user + '.json')
-    if os.path.isfile(user_json_path):
-        user_json = json.loads(open(user_json_path, 'r').read())
-        return f'user {user} gcode rights: {json.dumps(user_json["rights"])}'
+@web.middleware
+async def auth(request, handler):
+    try:
+        assert 'Authorization' in request.headers, Exception('Authorization not in headers')
+        authorization = request.headers['Authorization']
+        assert 'Basic ' == authorization[:6], Exception('not a basic auth')
+        auth = base64.b64decode(authorization[6:]).decode()
+        user, password = auth.split(':')
+        assert user in [u.replace('.json', '') for u in os.listdir('data/users')], Exception('User not found')
+        real_password = json.load(open(f'data/users/{user}.json'))['password']
+        assert real_password == password, Exception('incorrect password')
+        request['username'] = user
+        request['admin'] = user in ['Gabriel']
+
+    except Exception as e:
+        logger.warning(f'unauthorized request: {e}')
+        return web.Response(status=401)
+
+    return await handler(request)
+
+
+async def register(request):
+    try:
+        user = await request.json()
+    except Exception as e:
+        logger.warning(f'request body must be a json: {e}')
+        return web.Response(text='request body must be a json', status=400)
+
+    for param in ['name', 'password']:
+        if param not in user:
+            logger.warning(f'"{param}" parameter must be in json')
+            return web.Response(text=f'"{param}" parameter must be in json', status=400)
+
+    existing_users = [u.replace('.json', '') for u in os.listdir('data/users')]
+    if user['name'] in existing_users:
+        logger.warning(f'trying to register {user["name"]} while it is already registered')
+        return web.Response(text=f'user {user["name"]} already registered', status=400)
     else:
-        return f'user {user} has no gcode rights'
+        json.dump({'password': user['password'], 'rights': []}, open(f'data/users/{user["name"]}.json', 'w'))
+        return web.Response(text='ok', status=200)
 
 
-@app.route('/buffer', methods=['GET'])
-@auth_user.login_required
-@cross_origin()
-def return_buffer():
-    global buffer_out
-    global buffer_in
-    user = auth_user.username()
-    buffer_in[user] = {'temp': request.args.get('temp'), 'job': request.args.get('job')}
-    if len(buffer_out[user]) > 0:
-        to_return = buffer_out[user][0]
-        print('sending instruction and deleting it from buffer')
-        del buffer_out[user][0]
-        return to_return
+async def users(request):
+    return web.json_response([u.replace('.json', '') for u in os.listdir('data/users')])
 
+
+async def gcodes(request):
+    return web.json_response(os.listdir('data/gcodes'))
+
+
+async def rights(request):
+    if not request['admin']:
+        logger.warning(f'user {request["username"]} is not admin')
+        return web.Response(status=401)
+    try:
+        right = await request.json()
+    except Exception as e:
+        logger.warning(f'request body must be a json: {e}')
+        return web.Response(text='request body must be a json', status=400)
+
+    for param in ['user', 'gcode']:
+        if param not in right:
+            logger.warning(f'"{param}" parameter must be in json')
+            return web.Response(text=f'"{param}" parameter must be in json', status=400)
+
+    if right['gcode'] not in os.listdir('data/gcodes'):
+        logger.warning(f'gcode {right["gcode"]} does not exists')
+        return web.Response(text=f'gcode {right["gcode"]} does not exists', status=400)
+
+    if right['user'] not in [u.replace('.json', '') for u in os.listdir('data/users')]:
+        logger.warning(f'user {right["user"]} does not exist')
+        return web.Response(text=f'user {right["user"]} does not exist', status=400)
+
+    user = json.load(open(f'data/users/{right["user"]}.json'))
+    if right['gcode'] in user['rights']:
+        logger.warning(f'user {right["user"]} already has right to {right["gcode"]}')
+        return web.Response(text=f'user {right["user"]} already has right to {right["gcode"]}', status=400)
     else:
-        return json.dumps({'instruction': 'None'})
+        user['rights'].append(right['gcode'])
+        json.dump(user, open(f'data/users/{right["user"]}.json'))
+        return web.Response(text='ok', status=200)
 
 
-@app.route('/stats', methods=['GET'])
-@auth_user.login_required
-@cross_origin()
-def stats():
-    global buffer_in
-    user = auth_user.username()
-    return json.dumps(buffer_in[user], indent=4)
+async def checkrights(request):
+    username = request['username']
+    if username not in [u.replace('.json', '') for u in os.listdir('data/users')]:
+        logger.warning(f'user {username} does not exist')
+        return web.Response(text=f'user {username} does not exist', status=400)
+    return web.json_response(json.load(open(f'data/users/{username}.json'))['rights'])
 
 
-@app.route('/full_stats', methods=['GET'])
-@auth_admin.login_required
-@cross_origin()
-def full_stats():
-    global buffer_in
-    return json.dumps(buffer_in,  indent=4)
+async def stats(request):
+    username = request['username']
+    if username not in [u.replace('.json', '') for u in os.listdir('data/users')]:
+        logger.warning(f'user {username} does not exist')
+        return web.Response(text=f'user {username} does not exist', status=400)
+    if request['username'] not in printers:
+        logger.info(f'{request["username"]}\'s pandora is not connected')
+        return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=400)
+
+    status = printers[username]['status']
+    return web.json_response(status) if status else web.Response(text=f'status unknown', status=400)
 
 
-@app.route('/add', methods=['POST'])
-@auth_user.login_required
-@cross_origin()
-def add_to_buffer():
-    global buffer_out
+async def add(request):
     try:
-        json_instruction = request.data
-        user = auth_user.username()
-        json_decoded = json.loads(json_instruction)
-        check_add(json_decoded)
-        buffer_out[user].append(json_instruction)
-        print('json added to buffer')
-        return make_response(json.dumps({'status': 'ok'}), 200)
-
+        instruction = await request.json()
     except Exception as e:
-        print(f'error adding instruction to buffer: {e}')
-        return make_response(json.dumps({'status': 'not ok', 'error': str(e)}), 400)
-
-
-@app.route('/upload', methods=['POST'])
-@auth_admin.login_required
-@cross_origin()
-def upload_file():
+        logger.warning(f'request body must be a json: {e}')
+        return web.Response(text='request body must be a json', status=400)
     try:
-        folder = 'gcodes'
-        file = request.files['file']
-        if '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() == 'gcode':
-            if not os.path.exists(folder): os.makedirs(folder)
-            file.save(os.path.join(folder, file.filename))
-            return make_response(f'g-code {file.filename} uploaded correctly', 200)
-
-        else:
-            return make_response('only .gcode files are allowed', 400)
-
+        sanity_checker.check_add(instruction)
     except Exception as e:
-        print('error al subir gcode: ' + str(e))
-        return make_response('error uploading g-code: ' + str(e), 400)
+        logger.warning(f'error adding instruction: {e}')
+        return web.Response(text=str(e), status=400)
+
+    if request['username'] not in printers:
+        logger.info(f'{request["username"]}\'s pandora is not connected')
+        return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=400)
+
+    await sio.emit('instruction', instruction, to=printers[request['username']])
+    if config['wait_responses']:
+        start = time.time()
+        while True:
+            if printers[request["username"]]['response']:
+                r = printers[request["username"]]['response']
+                return web.Response(text=r, status=200 if r == 'ok' else 400)
+            elif time.time() - start > 5:
+                return web.Response(text='timeout waiting for printer response', status=400)
+            await asyncio.sleep(0.25)
+    else:
+        return web.Response(text='ok')
 
 
-@app.route('/download', methods=['GET'])
-@auth_user.login_required
-@cross_origin()
-def download_file():
-    try:
-        user = auth_user.username()
-        filename = request.args.get('filename')
-        folder = 'gcodes'
-        assert os.path.exists(folder), Exception('there are no g-codes in the server')
-        file_path = os.path.join(folder, filename)
-        assert os.path.isfile(file_path), Exception(f'g-code {filename} is not in the server')
-        # TODO ojo cuidado con el and false
-        # user_json_path = os.path.join('users', user + '.json')
-        # if not os.path.isfile(user_json_path):
-        #     return f'user {user} has no right to print this g-code'
-        # else:
-        #     user_json = json.loads(open(user_json_path, 'r').read())
-        #     if filename in user_json['rights']:
-        #         return send_file(file_path)
-        #     else:
-        #         return f'user {user} has no right to print this g-code'
-        return send_file(file_path)
+async def upload(request):
+    reader = await request.multipart()
+    file = await reader.next()
+    if file.name != 'file':
+        logger.warning(f'file key {file.name} is not valid, only "file" is allowed')
+        return web.Response(text=f'file key {file.name} is not valid, only "file" is allowed', status=400)
 
-    except Exception as e:
-        print('error al mandar archivo gcode a impresora: ' + str(e))
-        return make_response('error al mandar archivo gcode a impresora: ' + str(e), 400)
+    if file.filename[-6:] != '.gcode':
+        logger.warning(f'file {file.filename} is not a gcode')
+        return web.Response(text=f'file {file.filename} is not a gcode', status=400)
 
+    gcode_path = os.path.join('data', 'gcodes', file.filename)
+    with open(gcode_path, 'wb') as f:
+        while True:
+            chunk = await file.read_chunk()
+            if not chunk: break
+            f.write(chunk)
+    return web.Response(text='ok')
+
+
+async def download(request):
+    params = request.rel_url.query
+    for param in ['file']:
+        if param not in params:
+            logger.warning(f'"{param}" parameter must be in query parameters')
+            return web.Response(text=f'"{param}" parameter must be in query parameters', status=400)
+
+    filepath = os.path.join('data', 'gcodes', params['file'])
+    if not os.path.isfile(filepath):
+        logger.warning(f'file {params["file"]} does not exist')
+        return web.Response(text=f'file {params["file"]} does not exist', status=400)
+
+    user_rights = json.load(open(f'data/users/{request["username"]}.json'))['rights']
+    if params['file'] not in user_rights:
+        logger.warning(f'user {request["username"]} has no right to download {params["file"]}')
+        return web.Response(text=f'user {request["username"]} has no right to download {params["file"]}', status=400)
+
+    return web.FileResponse(filepath)
+
+app.middlewares.append(auth)
+app.router.add_routes([
+    web.post('/register', register),
+    web.get('/users', users),
+    web.get('/gcodes', gcodes),
+    web.post('/rights/give', rights),
+    web.get('/rights/check', checkrights),
+    web.get('/stats', stats),
+    web.post('/add', add),
+    web.post('/upload', upload)
+])
+
+cors = aiohttp_cors.setup(app, defaults={
+    "*": aiohttp_cors.ResourceOptions(
+        allow_credentials=True,
+        expose_headers="*",
+        allow_headers="*",
+    )
+})
+for route in list(app.router.routes()):
+    cors.add(route)
 
 if __name__ == '__main__':
-    import socket
-    if socket.gethostname() == 'artenea':
-        app.run(host=config['Artenea_host'], port=config['Artenea_port'], ssl_context=('fullchain.pem', 'privkey.pem'))
-    else:
-        app.run(host=config['Artenea_host'], port=config['Artenea_port'])
+    web.run_app(app, host=config['host'], port=config['port'])
