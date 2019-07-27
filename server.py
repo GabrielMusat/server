@@ -7,7 +7,9 @@ import time
 import socketio
 import asyncio
 import os
+import sys
 import sanity_checker
+assert len(sys.argv) == 3, Exception('admin username should be first arg and password should be second arg')
 
 logger = Logger('server')
 
@@ -59,11 +61,13 @@ async def auth(request, handler):
         assert 'Basic ' == authorization[:6], Exception('not a basic auth')
         auth = base64.b64decode(authorization[6:]).decode()
         user, password = auth.split(':')
-        assert user in [u.replace('.json', '') for u in os.listdir('data/users')], Exception('User not found')
-        real_password = json.load(open(f'data/users/{user}.json'))['password']
-        assert real_password == password, Exception('incorrect password')
+        if user == sys.argv[1]:
+            assert password == sys.argv[2], Exception('incorrect password')
+        else:
+            assert user in [u.replace('.json', '') for u in os.listdir('data/users')], Exception('User not found')
+            real_password = json.load(open(f'data/users/{user}.json'))['password']
+            assert real_password == password, Exception('incorrect password')
         request['username'] = user
-        request['admin'] = user in ['Gabriel']
 
     except Exception as e:
         logger.warning(f'unauthorized request: {e}')
