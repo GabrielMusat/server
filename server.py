@@ -16,6 +16,7 @@ logger = Logger('server')
 sio = socketio.AsyncServer(async_mode='aiohttp')
 app = web.Application()
 
+
 if not os.path.isdir('data'): os.mkdir('data')
 if not os.path.isdir('data/gcodes'): os.mkdir('data/gcodes')
 if not os.path.isdir('data/users'): os.mkdir('data/users')
@@ -27,8 +28,8 @@ printers = {}
 
 @sio.event
 async def connect(sid, env):
-    printers[env['name']] = {'sid': sid, 'response': None, 'status': None}
-    logger.info(f'{env["name"]}\'s pandora is connected :)')
+    printers[env['HTTP_NAME']] = {'sid': sid, 'response': None, 'status': None}
+    logger.info(f'{env["HTTP_NAME"]}\'s pandora is connected :)')
 
 
 @sio.event
@@ -55,6 +56,9 @@ async def disconnect(sid):
 
 @web.middleware
 async def auth(request, handler):
+    if request.path.startswith('/socket.io/'):
+        return await handler(request)
+
     try:
         assert 'Authorization' in request.headers, Exception('Authorization not in headers')
         authorization = request.headers['Authorization']
@@ -190,13 +194,14 @@ async def add(request):
         logger.info(f'{request["username"]}\'s pandora is not connected')
         return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=400)
 
-    await sio.emit('instruction', instruction, to=printers[request['username']])
+    await sio.emit('instruction', instruction, to=printers[request['username']]['sid'])
     logger.info(f'instruction {instruction} sent correctly to {request["username"]}\'s printer', color='OKGREEN')
     if config['wait_responses']:
         start = time.time()
         while True:
             if printers[request["username"]]['response']:
                 r = printers[request["username"]]['response']
+                printers[request["username"]]['response'] = None
                 return web.Response(text=r, status=200 if r == 'ok' else 400)
             elif time.time() - start > 5:
                 logger.warning(f'timeout waiting for response to instruction {instruction} of {request["username"]}\'s printer')
@@ -259,7 +264,8 @@ app.router.add_routes([
     web.get('/rights/check', checkrights),
     web.get('/stats', stats),
     web.post('/add', add),
-    web.post('/upload', upload)
+    web.post('/upload', upload),
+    web.get('/download', download)
 ])
 
 cors = aiohttp_cors.setup(app, defaults={
@@ -272,5 +278,6 @@ cors = aiohttp_cors.setup(app, defaults={
 for route in list(app.router.routes()):
     cors.add(route)
 
+sio.attach(app)
 if __name__ == '__main__':
     web.run_app(app, host=config['host'], port=config['port'])
