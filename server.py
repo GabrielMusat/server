@@ -199,7 +199,10 @@ async def add(request):
     if config['wait_responses']:
         start = time.time()
         while True:
-            if printers[request["username"]]['response']:
+            if request["username"] not in printers:
+                logger.warning(f'lossed connection with {request["username"]}\'s printer')
+                return web.Response(text=f'lossed connection with {request["username"]}\'s printer', status=400)
+            elif printers[request["username"]]['response']:
                 r = printers[request["username"]]['response']
                 printers[request["username"]]['response'] = None
                 return web.Response(text=r, status=200 if r == 'ok' else 400)
