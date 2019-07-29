@@ -28,6 +28,9 @@ printers = {}
 
 @sio.event
 async def connect(sid, env):
+    if env['HTTP_NAME'] not in [u.replace('.json', '') for u in os.listdir('data/users')]:
+        logger.warning(f'unauthorized socket connection from {env["HTTP_NAME"]}')
+        return False
     printers[env['HTTP_NAME']] = {'sid': sid, 'response': None, 'status': None}
     logger.info(f'{env["HTTP_NAME"]}\'s pandora is connected :)')
 
