@@ -1,5 +1,5 @@
 from aiohttp import web
-import aiohttp_cors
+from cors import cors_factory
 from logger import Logger
 import base64
 import json
@@ -261,7 +261,12 @@ async def download(request):
     logger.info(f'sending file {params["file"]} to {request["username"]}\'s printer', color='OKGREEN')
     return web.FileResponse(filepath)
 
-app.middlewares.append(auth)
+
+async def authentication(request):
+    logger.info(f'user {request["username"]} authenticated correctly')
+    return web.json_response({'authorization': 'admin' if request["admin"] else 'user'})
+
+
 app.router.add_routes([
     web.post('/register', register),
     web.get('/users', users),
@@ -271,19 +276,13 @@ app.router.add_routes([
     web.get('/stats', stats),
     web.post('/add', add),
     web.post('/upload', upload),
-    web.get('/download', download)
+    web.get('/download', download),
+    web.get('/authentication', authentication)
 ])
 
-cors = aiohttp_cors.setup(app, defaults={
-    "*": aiohttp_cors.ResourceOptions(
-        allow_credentials=True,
-        expose_headers="*",
-        allow_headers="*",
-    )
-})
-for route in list(app.router.routes()):
-    cors.add(route)
 
+app.middlewares.append(cors_factory)
+app.middlewares.append(auth)
 sio.attach(app)
 if __name__ == '__main__':
     web.run_app(app, host=config['host'], port=config['port'])
