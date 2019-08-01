@@ -115,12 +115,32 @@ async def users(request):
     return web.json_response([u.replace('.json', '') for u in os.listdir('data/users')])
 
 
+async def connected(request):
+    if request['admin']:
+        logger.info(f'admin {request["username"]} requests to know pandoras connected to server')
+        connected_printers = [printer for printer in printers]
+        logger.info(f'connected printers are {connected_printers}', color='OKGREEN')
+        return web.json_response(connected_printers)
+    else:
+        logger.info(f'user {request["username"]} requests to know its pandora connection', color='OKBLUE')
+        connected_printer = request["username"] in printers
+        logger.info(f'{request["username"]}\'s pandora is {"" if connected_printer else "not"} connected')
+        return web.Response(status=200 if connected_printer else 404)
+
+
 async def gcodes(request):
-    return web.json_response(os.listdir('data/gcodes'))
+    logger.info(f'user {request["username"]} requests to know its available gcodes', color='OKBLUE')
+    if request['admin']:
+        gcode_rights = os.listdir('data/gcodes')
+    else:
+        gcode_rights = json.load(open(f'data/users/{request["username"]}.json'))['rights']
+
+    logger.info(f'gcodes available for {request["username"]} are {gcode_rights}', color='OKGREEN')
+    return web.json_response(gcode_rights)
 
 
 async def rights(request):
-    logger.info(f'user {request["username"]} request a new right association', color='OKBLUE')
+    logger.info(f'user {request["username"]} requests a new right association', color='OKBLUE')
     if not request['admin']:
         logger.warning(f'user {request["username"]} is not admin')
         return web.Response(status=401)
@@ -169,19 +189,19 @@ async def stats(request):
     logger.info(f'user {request["username"]} requests to know its stats', color='OKBLUE')
     username = request['username']
     if username not in [u.replace('.json', '') for u in os.listdir('data/users')]:
-        logger.warning(f'user {username} does not exist')
+        logger.warning(f'user {username} has requested its status but does not exist')
         return web.Response(text=f'user {username} does not exist', status=400)
     if request['username'] not in printers:
-        logger.info(f'{request["username"]}\'s pandora is not connected')
-        return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=400)
+        # logger.debug(f'{request["username"]}\'s pandora is not connected')
+        return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=404)
 
     status = printers[username]['status']
-    logger.info(f'user {request["username"]}\'s stats are {status}')
+    # logger.debug(f'user {request["username"]}\'s stats are {status}')
     return web.json_response(status) if status else web.Response(text=f'status unknown', status=400)
 
 
 async def add(request):
-    logger.info(f'user {request["username"]} requests to add an instruction')
+    logger.info(f'user {request["username"]} requests to add an instruction', color='OKBLUE')
     try:
         instruction = await request.json()
     except Exception as e:
@@ -194,7 +214,7 @@ async def add(request):
         return web.Response(text=str(e), status=400)
 
     if request['username'] not in printers:
-        logger.info(f'{request["username"]}\'s pandora is not connected')
+        logger.warning(f'{request["username"]}\'s pandora is not connected')
         return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=400)
 
     await sio.emit('instruction', instruction, to=printers[request['username']]['sid'])
@@ -209,7 +229,7 @@ async def add(request):
                 r = printers[request["username"]]['response']
                 printers[request["username"]]['response'] = None
                 return web.Response(text=r, status=200 if r == 'ok' else 400)
-            elif time.time() - start > 5:
+            elif time.time() - start > 30:
                 logger.warning(f'timeout waiting for response to instruction {instruction} of {request["username"]}\'s printer')
                 return web.Response(text='timeout waiting for printer response', status=400)
             await asyncio.sleep(0.25)
@@ -271,6 +291,7 @@ app.router.add_routes([
     web.post('/register', register),
     web.get('/users', users),
     web.get('/gcodes', gcodes),
+    web.get('/connected', connected),
     web.post('/rights/give', rights),
     web.get('/rights/check', checkrights),
     web.get('/stats', stats),
