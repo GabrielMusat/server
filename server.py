@@ -186,7 +186,7 @@ async def checkrights(request):
 
 
 async def stats(request):
-    logger.info(f'user {request["username"]} requests to know its stats', color='OKBLUE')
+    # logger.debug(f'user {request["username"]} requests to know its stats', color='OKBLUE')
     username = request['username']
     if username not in [u.replace('.json', '') for u in os.listdir('data/users')]:
         logger.warning(f'user {username} has requested its status but does not exist')
