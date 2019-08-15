@@ -20,7 +20,7 @@ echo "
 #!/usr/bin/env bash
 cd /var/www/server
 source venv/bin/activate
-python3 server.py
+python server.py \$@
 " > server.sh
 
 sudo chmod +x server.sh
@@ -35,9 +35,9 @@ sudo echo "
 Description=zi
 [Service]
 User=root
-ExecStart=/bin/bash /usr/bin/server
+ExecStart=/bin/bash /usr/bin/server $@
 Restart=on-failure
-WorkingDirectory=/
+WorkingDirectory=/var/www/server
 StandardOutput=syslog
 StandardError=syslog
 [Install]
