@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cd ~/server
+cd /var/www/server
 
 sudo apt install python3-pip -y
 
@@ -18,13 +18,13 @@ pip3 install -r requirements.txt
 
 echo "
 #!/usr/bin/env bash
-cd ~/server
+cd /var/www/server
 source venv/bin/activate
 python3 server.py
 " > server.sh
 
 sudo chmod +x server.sh
-sudo mv server.sh /bin/server
+sudo mv server.sh /usr/bin/server
 
 sudo touch /etc/systemd/system/server.service
 sudo chmod 775 /etc/systemd/system/server.service
@@ -35,7 +35,7 @@ sudo echo "
 Description=zi
 [Service]
 User=root
-ExecStart=/bin/bash /bin/server
+ExecStart=/bin/bash /usr/bin/server
 Restart=on-failure
 WorkingDirectory=/
 StandardOutput=syslog
