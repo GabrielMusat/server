@@ -255,7 +255,10 @@ async def upload(request):
             chunk = await file.read_chunk()
             if not chunk: break
             f.write(chunk)
-
+    logger.info(f'giving right to user {request["username"]}')
+    user = json.load(open(f'data/users/{request["username"]}.json'))
+    user['rights'].append(file.filename)
+    json.dump(user, open(f'data/users/{request["username"]}.json', 'w'))
     logger.info(f'file {file.filename} uploaded correctly', color='OKGREEN')
     return web.Response(text='ok')
 
