@@ -1,7 +1,7 @@
 import os
 
 
-accepted_instructions = ['home', 'print', 'download', 'command', 'move', 'load', 'unload']
+accepted_instructions = ['home', 'print', 'cancel', 'download', 'command', 'move', 'load', 'unload']
 
 
 def check_add(json_decoded):
