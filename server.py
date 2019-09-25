@@ -241,25 +241,24 @@ async def upload(request):
     logger.info(f'user {request["username"]} requests a file upload', color='OKBLUE')
     reader = await request.multipart()
     file = await reader.next()
-    if file.name != 'file':
-        logger.warning(f'file key {file.name} is not valid, only "file" is allowed')
-        return web.Response(text=f'file key {file.name} is not valid, only "file" is allowed', status=400)
-
-    if file.filename[-6:] != '.gcode':
-        logger.warning(f'file {file.filename} is not a gcode')
-        return web.Response(text=f'file {file.filename} is not a gcode', status=400)
-
-    gcode_path = os.path.join('data', 'gcodes', file.filename)
-    with open(gcode_path, 'wb') as f:
-        while True:
-            chunk = await file.read_chunk()
-            if not chunk: break
-            f.write(chunk)
-    logger.info(f'giving right to user {request["username"]}')
     user = json.load(open(f'data/users/{request["username"]}.json'))
-    if file.filename not in user['rights']: user['rights'].append(file.filename)
+    while file:
+        logger.info(f'loading file {file.filename}...')
+        if file.filename[-6:] != '.gcode':
+            logger.warning(f'file {file.filename} is not a gcode')
+            return web.Response(text=f'file {file.filename} is not a gcode', status=400)
+
+        gcode_path = os.path.join('data', 'gcodes', file.filename)
+        with open(gcode_path, 'wb') as f:
+            while True:
+                chunk = await file.read_chunk()
+                if not chunk: break
+                f.write(chunk)
+        logger.info(f'giving right to user {request["username"]}')
+        if file.filename not in user['rights']: user['rights'].append(file.filename)
+        logger.info(f'file {file.filename} uploaded correctly', color='OKGREEN')
+        await reader.next()
     json.dump(user, open(f'data/users/{request["username"]}.json', 'w'))
-    logger.info(f'file {file.filename} uploaded correctly', color='OKGREEN')
     return web.Response(text='ok')
 
 
