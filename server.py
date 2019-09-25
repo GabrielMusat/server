@@ -257,7 +257,7 @@ async def upload(request):
         logger.info(f'giving right to user {request["username"]}')
         if file.filename not in user['rights']: user['rights'].append(file.filename)
         logger.info(f'file {file.filename} uploaded correctly', color='OKGREEN')
-        await reader.next()
+        file = await reader.next()
     json.dump(user, open(f'data/users/{request["username"]}.json', 'w'))
     return web.Response(text='ok')
 
