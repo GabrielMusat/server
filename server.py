@@ -31,7 +31,7 @@ async def connect(sid, env):
     if env['HTTP_NAME'] not in [u.replace('.json', '') for u in os.listdir('data/users')]:
         logger.warning(f'unauthorized socket connection from {env["HTTP_NAME"]}')
         return False
-    printers[env['HTTP_NAME']] = {'sid': sid, 'response': None, 'status': None}
+    printers[env['HTTP_NAME']] = {'sid': sid, 'response': None, 'status': None, 'settings': None}
     logger.info(f'{env["HTTP_NAME"]}\'s pandora is connected :)')
 
 
@@ -44,6 +44,7 @@ async def response(sid, data):
 @sio.event
 async def status(sid, data):
     printers[data['user']]['status'] = data['status']
+    printers[data['user']]['settings'] = data['settings']
 
 
 @sio.event
@@ -195,9 +196,24 @@ async def stats(request):
         # logger.debug(f'{request["username"]}\'s pandora is not connected')
         return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=404)
 
-    status = printers[username]['status']
+    printer_status = printers[username]['status']
     # logger.debug(f'user {request["username"]}\'s stats are {status}')
-    return web.json_response(status) if status else web.Response(text=f'status unknown', status=400)
+    return web.json_response(printer_status) if printer_status else web.Response(text=f'status unknown', status=400)
+
+
+async def settings(request):
+    # logger.debug(f'user {request["username"]} requests to know its stats', color='OKBLUE')
+    username = request['username']
+    if username not in [u.replace('.json', '') for u in os.listdir('data/users')]:
+        logger.warning(f'user {username} has requested its status but does not exist')
+        return web.Response(text=f'user {username} does not exist', status=400)
+    if request['username'] not in printers:
+        # logger.debug(f'{request["username"]}\'s pandora is not connected')
+        return web.Response(text=f'{request["username"]}\'s pandora is not connected', status=404)
+
+    printer_settings = printers[username]['settings']
+    # logger.debug(f'user {request["username"]}\'s stats are {status}')
+    return web.json_response(printer_settings) if status else web.Response(text=f'settings unknown', status=400)
 
 
 async def add(request):
@@ -297,6 +313,7 @@ app.router.add_routes([
     web.post('/rights/give', rights),
     web.get('/rights/check', checkrights),
     web.get('/stats', stats),
+    web.get('/settings', settings),
     web.post('/add', add),
     web.post('/upload', upload),
     web.get('/download', download),
