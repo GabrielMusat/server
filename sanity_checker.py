@@ -1,7 +1,7 @@
 import os
 
 
-accepted_instructions = ['home', 'print', 'cancel', 'download', 'command', 'move', 'load', 'unload']
+accepted_instructions = ['home', 'print', 'cancel', 'download', 'command', 'move', 'load', 'unload', 'wifi', 'set_init_gcode']
 
 
 def check_add(json_decoded):
@@ -17,3 +17,6 @@ def check_add(json_decoded):
     if json_decoded['instruction'] == 'move':
         assert 'axis' in json_decoded, Exception('axis parameter not found, move instruction must be passed with axis and distance parameters')
         assert 'distance' in json_decoded, Exception('distance parameter not found, move instruction must be passed with axis and distance parameters')
+    if json_decoded['instruction'] == 'wifi':
+        assert 'ssid' in json_decoded, Exception('ssid parameter not found, it must be set with the name of the wifi')
+        assert 'psk' in json_decoded, Exception('psk parameter not found, it must be set with the the wifi`s password')
