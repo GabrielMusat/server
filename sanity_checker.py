@@ -19,6 +19,6 @@ def check_add(json_decoded):
         assert 'distance' in json_decoded, Exception('distance parameter not found, move instruction must be passed with axis and distance parameters')
     if json_decoded['instruction'] == 'wifi':
         assert 'ssid' in json_decoded, Exception('ssid parameter not found, it must be set with the name of the wifi')
-        assert json_decoded["ssid"] > 3, Exception('parámetro ssid incorrecto')
+        assert len(json_decoded["ssid"]) > 3, Exception('parámetro ssid incorrecto')
         assert 'psk' in json_decoded, Exception('psk parameter not found, it must be set with the the wifi`s password')
-        assert json_decoded["psk"] > 3, Exception('parámetro ssid incorrecto')
+        assert len(json_decoded["psk"]) > 3, Exception('parámetro ssid incorrecto')
